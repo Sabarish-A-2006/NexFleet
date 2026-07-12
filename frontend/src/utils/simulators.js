@@ -19,17 +19,25 @@ function clamp(value, min, max) {
 }
 
 export function getNextStats(prev) {
-  const mileageDelta = 2 + Math.random() * 6;
-  const fuelDelta = -0.6 - Math.random() * 0.8;
+  // At 1-second intervals, mileage increases realistically (e.g. 15-25 meters/sec = 54-90 km/h)
+  const mileageDelta = 0.015 + Math.random() * 0.01;
+  // Deplete fuel slowly and steadily per second
+  const fuelDelta = -0.001 - Math.random() * 0.0015;
+
+  // Occasional state change for cabin conditions (5% chance per second)
+  const seatCondition = Math.random() > 0.95 ? ['Good', 'Comfort', 'Firm'][Math.floor(Math.random() * 3)] : (prev.seatCondition || 'Good');
+  const cleanliness   = Math.random() > 0.95 ? ['Clean', 'Moderate', 'Needs Wash'][Math.floor(Math.random() * 3)] : (prev.cleanliness || 'Clean');
 
   return {
     ...prev,
-    tyrePressureFL: clamp(prev.tyrePressureFL + (Math.random() - 0.5) * 0.4, 30, 36),
-    tyrePressureFR: clamp(prev.tyrePressureFR + (Math.random() - 0.5) * 0.4, 30, 36),
-    tyrePressureRL: clamp(prev.tyrePressureRL + (Math.random() - 0.5) * 0.4, 30, 36),
-    tyrePressureRR: clamp(prev.tyrePressureRR + (Math.random() - 0.5) * 0.4, 30, 36),
+    tyrePressureFL: clamp(prev.tyrePressureFL + (Math.random() - 0.5) * 0.08, 30, 36),
+    tyrePressureFR: clamp(prev.tyrePressureFR + (Math.random() - 0.5) * 0.08, 30, 36),
+    tyrePressureRL: clamp(prev.tyrePressureRL + (Math.random() - 0.5) * 0.08, 30, 36),
+    tyrePressureRR: clamp(prev.tyrePressureRR + (Math.random() - 0.5) * 0.08, 30, 36),
     fuelLevel: clamp(prev.fuelLevel + fuelDelta, 5, 100),
     mileageKm: clamp(prev.mileageKm + mileageDelta, prev.mileageKm, prev.serviceDueKm + 2000),
-    cabinTemperature: clamp(prev.cabinTemperature + (Math.random() - 0.5) * 0.6, 18, 30)
+    cabinTemperature: clamp(prev.cabinTemperature + (Math.random() - 0.5) * 0.12, 18, 30),
+    seatCondition,
+    cleanliness
   };
 }

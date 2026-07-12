@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useMemo,
   useState,
+  useRef,
 } from "react";
 import api from "../api/axios.js";
 import { useNotifications } from "./NotificationContext.jsx";
@@ -64,12 +65,24 @@ export function AppProvider({ children }) {
   const [crashStage, setCrashStage] = useState(null);
   const [crashCountdown, setCrashCountdown] = useState(null);
   const [crashActive, setCrashActive] = useState(false);
+  const [deviceLocationActive, setDeviceLocationActive] = useState(false);
+
+  const statsRef = useRef(stats);
+  const locationRef = useRef(location);
+
+  useEffect(() => {
+    statsRef.current = stats;
+  }, [stats]);
+
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
 
   useEffect(() => {
     if (!liveMode) return;
     const interval = setInterval(() => {
       setStats((prev) => getNextStats(prev));
-    }, 5000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [liveMode]);
 
@@ -85,8 +98,36 @@ export function AppProvider({ children }) {
 
   const headingRef = React.useRef(45); // Start driving North-East
 
+  // Geolocation watcher for user's actual device location
   useEffect(() => {
-    if (!gpsEnabled || !liveMode) return;
+    if (!deviceLocationActive) return;
+    if (!navigator.geolocation) {
+      pushNotification("Geolocation is not supported by your browser.", "warning");
+      setDeviceLocationActive(false);
+      return;
+    }
+    pushNotification("Requesting GPS access for live device tracking...", "info");
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          speed: pos.coords.speed ? (pos.coords.speed * 3.6) : 0, // convert m/s to km/h
+        });
+      },
+      (err) => {
+        console.error(err);
+        pushNotification(`Device GPS error: ${err.message}`, "danger");
+        setDeviceLocationActive(false);
+      },
+      { enableHighAccuracy: true }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [deviceLocationActive, pushNotification]);
+
+  // Standard random walking location simulation (paused when tracking device location)
+  useEffect(() => {
+    if (!gpsEnabled || !liveMode || deviceLocationActive) return;
 
     const interval = setInterval(() => {
       setLocation((prev) => {
@@ -100,8 +141,8 @@ export function AppProvider({ children }) {
         if (newSpeed < 10) newSpeed = 10 + Math.random() * 5;
         if (newSpeed > 90) newSpeed = 90 - Math.random() * 5;
 
-        // Calculate distance traveled in exactly 2 seconds
-        const distanceKm = (newSpeed / 3600) * 2;
+        // Calculate distance traveled in exactly 1 second
+        const distanceKm = (newSpeed / 3600) * 1;
 
         // 1 degree latitude = approx 111.32 km
         const latDelta = (distanceKm * Math.cos(headingRad)) / 111.32;
@@ -116,50 +157,68 @@ export function AppProvider({ children }) {
           speed: newSpeed,
         };
       });
-    }, 2000);
+    }, 1000);
 
     return () => clearInterval(interval);
-  }, [gpsEnabled, liveMode]);
+  }, [gpsEnabled, liveMode, deviceLocationActive]);
 
-  useEffect(() => {
-    if (!location || !gpsEnabled || !liveMode) return;
-    api
-      .post("/locations", {
-        vehicleId,
-        latitude: location.lat,
-        longitude: location.lng,
-        speedKph: Number(location.speed || 0),
-      })
-      .catch(() => {});
-  }, [location, gpsEnabled, vehicleId, liveMode]);
-
+  // Post locations efficiently every 5 seconds using ref to optimize database writes
   useEffect(() => {
     if (!liveMode) return;
     const interval = setInterval(() => {
+      if (!gpsEnabled || !locationRef.current) return;
+      api
+        .post("/locations", {
+          vehicleId,
+          latitude: locationRef.current.lat,
+          longitude: locationRef.current.lng,
+          speedKph: Number(locationRef.current.speed || 0),
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [liveMode, gpsEnabled, vehicleId]);
+
+  // Post stats efficiently every 15 seconds using ref to avoid resetting timers every second
+  useEffect(() => {
+    if (!liveMode) return;
+    const interval = setInterval(() => {
+      const s = statsRef.current;
+      if (!s) return;
       api
         .post("/stats", {
           vehicleId,
-          tyrePressureFL: stats.tyrePressureFL,
-          tyrePressureFR: stats.tyrePressureFR,
-          tyrePressureRL: stats.tyrePressureRL,
-          tyrePressureRR: stats.tyrePressureRR,
-          fuelLevel: stats.fuelLevel,
-          mileageKm: stats.mileageKm,
-          cabinTemperature: stats.cabinTemperature,
-          seatCondition: stats.seatCondition,
-          cleanliness: stats.cleanliness,
+          tyrePressureFL: s.tyrePressureFL,
+          tyrePressureFR: s.tyrePressureFR,
+          tyrePressureRL: s.tyrePressureRL,
+          tyrePressureRR: s.tyrePressureRR,
+          fuelLevel: s.fuelLevel,
+          mileageKm: s.mileageKm,
+          cabinTemperature: s.cabinTemperature,
+          seatCondition: s.seatCondition,
+          cleanliness: s.cleanliness,
         })
         .catch(() => {});
     }, 15000);
     return () => clearInterval(interval);
-  }, [liveMode, vehicleId, stats]);
+  }, [liveMode, vehicleId]);
 
-  const triggerImpact = () => {
+  const triggerImpact = async () => {
     if (crashActive) return;
     setCrashActive(true);
     setCrashStage("WARNING");
     setCrashCountdown(10);
     pushNotification("Minor impact detected. Awaiting response...", "warning");
+    try {
+      await api.post("/alerts", {
+        vehicleId,
+        stage: "WARNING",
+        status: "ACTIVE",
+        message: "Potential vehicle crash detected. System monitoring for driver responsiveness."
+      });
+    } catch (e) {
+      // Ignored
+    }
   };
 
   const login = useCallback((user) => {
@@ -224,6 +283,12 @@ export function AppProvider({ children }) {
           "No response detected. Escalating to Small Crash.",
           "danger",
         );
+        api.post("/alerts", {
+          vehicleId,
+          stage: "SMALL_CRASH",
+          status: "ACTIVE",
+          message: "No driver response detected. Escalated warning: Small Crash stage."
+        }).catch(() => {});
       } else if (crashStage === "SMALL_CRASH") {
         setCrashStage("SEVERE_CRASH");
         setCrashCountdown(60);
@@ -231,6 +296,12 @@ export function AppProvider({ children }) {
           "Severe crash risk. Sending emergency alerts soon.",
           "danger",
         );
+        api.post("/alerts", {
+          vehicleId,
+          stage: "SEVERE_CRASH",
+          status: "ACTIVE",
+          message: "Severe crash risk identified. SOS automatic dispatch sequence initiated."
+        }).catch(() => {});
       } else if (crashStage === "SEVERE_CRASH") {
         sendEmergencyAlert();
         setCrashActive(false);
@@ -289,6 +360,19 @@ export function AppProvider({ children }) {
     }, 1500);
   };
 
+  const performService = useCallback(() => {
+    setStats((prev) => {
+      const nextDue = Math.round(prev.mileageKm + 15000);
+      const nextDate = new Date(Date.now() + 180 * 24 * 3600000).toISOString().split('T')[0];
+      return {
+        ...prev,
+        serviceDueKm: nextDue,
+        serviceDueDate: nextDate,
+      };
+    });
+    pushNotification("Service successfully performed. Next reminder set for +15,000 km.", "success");
+  }, [pushNotification]);
+
   const value = useMemo(
     () => ({
       vehicleId,
@@ -313,6 +397,9 @@ export function AppProvider({ children }) {
       crashCountdown,
       crashActive,
       cancelCrashAlert,
+      performService,
+      deviceLocationActive,
+      setDeviceLocationActive,
     }),
     [
       vehicleId,
@@ -330,6 +417,8 @@ export function AppProvider({ children }) {
       crashStage,
       crashCountdown,
       crashActive,
+      performService,
+      deviceLocationActive,
     ],
   );
 

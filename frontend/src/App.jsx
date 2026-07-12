@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Outlet } from 'react-router-dom';
 import Sidebar from './components/Sidebar.jsx';
 import TopBar from './components/TopBar.jsx';
 import NotificationCenter from './components/NotificationCenter.jsx';
@@ -20,32 +20,33 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      
+      {/* App Shell Layout Route */}
       <Route
-        path="/*"
         element={
           <div className="app-shell">
             <Sidebar />
             <div className="app-main">
               <TopBar />
               <div className="app-content">
-                <Routes>
-                  <Route path="dashboard" element={<Dashboard />} />
-                  <Route path="media" element={<Media />} />
-                  <Route path="apps" element={<Apps />} />
-                  <Route path="connectivity" element={<Connectivity />} />
-                  <Route path="gps" element={<Gps />} />
-                  <Route path="vehicle" element={<Vehicle />} />
-                  <Route path="alerts" element={<Alerts />} />
-                  <Route path="crash-meter" element={<CrashMeter />} />
-                  <Route path="*" element={<Dashboard />} />
-                </Routes>
+                <Outlet />
               </div>
             </div>
             <NotificationCenter />
             <CrashAlertModal />
           </div>
         }
-      />
+      >
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="media" element={<Media />} />
+        <Route path="apps" element={<Apps />} />
+        <Route path="connectivity" element={<Connectivity />} />
+        <Route path="gps" element={<Gps />} />
+        <Route path="vehicle" element={<Vehicle />} />
+        <Route path="alerts" element={<Alerts />} />
+        <Route path="crash-meter" element={<CrashMeter />} />
+        <Route path="*" element={<Dashboard />} />
+      </Route>
     </Routes>
   );
 }

@@ -1,4 +1,10 @@
 {
   "java.compile.nullAnalysis.mode": "automatic",
-  "liveServer.settings.port": 5501
+  "liveServer.settings.port": 5501,
+  "liveServer.settings.root": "/frontend/dist",
+  "liveServer.settings.proxy": {
+    "enable": true,
+    "baseUri": "/",
+    "proxyUri": "http://localhost:5173"
+  }
 }

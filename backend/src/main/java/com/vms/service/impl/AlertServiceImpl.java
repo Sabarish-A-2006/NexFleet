@@ -55,7 +55,7 @@ public class AlertServiceImpl implements AlertService {
 
   @Override
   public List<AlertDto> getAll() {
-    return alertRepository.findAll().stream()
+    return alertRepository.findAllByOrderByCreatedAtDesc().stream()
       .map(this::toDto)
       .collect(Collectors.toList());
   }
